@@ -1,0 +1,76 @@
+name: Publicar FAST Race Assistant
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "build-release.ps1"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fast-race-assistant-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Gerar e publicar release
+    runs-on: windows-latest
+
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Gerar pacote
+        shell: pwsh
+        run: ./build-release.ps1
+
+      - name: Validar aplicativo no Windows PowerShell 5.1
+        shell: pwsh
+        run: |
+          $validation = Join-Path $env:RUNNER_TEMP 'fast-race-assistant-validation'
+          Expand-Archive -LiteralPath ./dist/fast-race-assistant.zip -DestinationPath $validation -Force
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $validation 'fast-race-assistant.ps1') -SmokeTest
+          if ($LASTEXITCODE -ne 0) { throw 'A validação do aplicativo falhou.' }
+
+          $manifest = Get-Content ./dist/fast-race-assistant-latest.json -Raw | ConvertFrom-Json
+          $hash = (Get-FileHash ./dist/fast-race-assistant.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest.sha256 -ne $hash) { throw 'O hash do manifesto não corresponde ao ZIP.' }
+          "version=$($manifest.version)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag=v$($manifest.version)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        id: package
+
+      - name: Impedir versão duplicada
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view '${{ steps.package.outputs.tag }}' --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw 'Esta versão já possui uma Release. Aumente app/version.json antes de publicar.'
+          }
+
+      - name: Criar GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.package.outputs.tag }}'
+          $version = '${{ steps.package.outputs.version }}'
+          gh release create $tag `
+            ./dist/fast-race-assistant.zip `
+            ./dist/fast-race-assistant-latest.json `
+            ./dist/SHA256SUMS.txt `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GITHUB_SHA `
+            --title "FAST Race Assistant $version" `
+            --generate-notes `
+            --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Não foi possível criar a GitHub Release.' }
+
+          "### FAST Race Assistant $version" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Release pública: https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$tag" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
