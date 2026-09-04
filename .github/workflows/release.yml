@@ -6,7 +6,6 @@ on:
     paths:
       - "app/**"
       - "build-release.ps1"
-      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
