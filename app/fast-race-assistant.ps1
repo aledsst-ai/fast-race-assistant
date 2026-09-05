@@ -17,7 +17,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $script:AppName = 'FAST Race Assistant'
-$script:AppVersion = '1.0.2'
+$script:AppVersion = '1.0.3'
 try {
     $versionConfig = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'version.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
     if ([string]$versionConfig.version -match '^\d+\.\d+\.\d+$') { $script:AppVersion = [string]$versionConfig.version }
@@ -26,6 +26,7 @@ $script:ApiOrigin = 'https://fastdivision.com.br'
 $script:DataDirectory = Join-Path $env:LOCALAPPDATA 'FAST\RaceAssistant\data'
 if ($SmokeTest) { $script:DataDirectory = Join-Path $env:TEMP 'FAST-RaceAssistant-SmokeTest' }
 $script:ConfigPath = Join-Path $script:DataDirectory 'assistant.json'
+$script:DiagnosticLogPath = Join-Path $script:DataDirectory 'diagnostics.log'
 $script:PendingUpdatePath = Join-Path $script:DataDirectory 'pending-update.zip'
 $script:ManifestUrl = 'https://github.com/aledsst-ai/fast-race-assistant/releases/latest/download/fast-race-assistant-latest.json'
 
@@ -456,6 +457,20 @@ function Write-AppConfig($Config) {
     [IO.File]::WriteAllText($script:ConfigPath, $json, (New-Object Text.UTF8Encoding $false))
 }
 
+function Write-DiagnosticEvent([string]$EventName, [int]$Status, [string]$ErrorCode, [string]$Detail = '') {
+    try {
+        Ensure-DataDirectory
+        $safeDetail = ([string]$Detail -replace '[\r\n\t]+', ' ').Trim()
+        if ($safeDetail.Length -gt 240) { $safeDetail = $safeDetail.Substring(0, 240) }
+        $line = "$(Get-Date -Format o)`tevent=$EventName`tstatus=$Status`terror=$ErrorCode`tdetail=$safeDetail"
+        Add-Content -LiteralPath $script:DiagnosticLogPath -Value $line -Encoding UTF8
+        $lines = @(Get-Content -LiteralPath $script:DiagnosticLogPath -ErrorAction SilentlyContinue)
+        if ($lines.Count -gt 200) {
+            [IO.File]::WriteAllLines($script:DiagnosticLogPath, [string[]]$lines[($lines.Count - 200)..($lines.Count - 1)], (New-Object Text.UTF8Encoding $false))
+        }
+    } catch {}
+}
+
 function Invoke-AssistantJson([string]$Method, [string]$Path, [string]$Token, $Body = $null) {
     $headers = @{ Authorization = "Bearer $Token"; 'X-FAST-App-Version' = $script:AppVersion }
     $arguments = @{ Uri = "$($script:ApiOrigin)$Path"; Method = $Method; Headers = $headers; UseBasicParsing = $true; TimeoutSec = 20 }
@@ -491,7 +506,7 @@ function Invoke-ResultUpload([string]$ImagePath, [string]$Token, [bool]$WasRevie
     try {
         $imageContent = New-Object Net.Http.ByteArrayContent(,[IO.File]::ReadAllBytes($ImagePath))
         $imageContent.Headers.ContentType = New-Object Net.Http.Headers.MediaTypeHeaderValue('image/jpeg')
-        $multipart.Add($imageContent, 'screenshot', 'comprovante.jpg')
+        $multipart.Add($imageContent, 'image', 'comprovante.jpg')
         if ($WasReviewed) {
             $multipart.Add((New-Object Net.Http.StringContent('true')), 'reviewed')
             $multipart.Add((New-Object Net.Http.StringContent($SelectedRaceKey)), 'raceKey')
@@ -523,10 +538,16 @@ if ($UploadFile) {
         $configuration = Read-AppConfig
         $deviceToken = Unprotect-Token ([string]$configuration.protectedToken)
         $uploadResult = Invoke-ResultUpload $UploadFile $deviceToken ([bool]$Reviewed) $RaceKey $Position $RaceTime
+        if ([int]$uploadResult.status -ne 201) {
+            $responseError = try { [string](($uploadResult.body | ConvertFrom-Json).error) } catch { 'invalid_response' }
+            Write-DiagnosticEvent 'upload_response' ([int]$uploadResult.status) $responseError
+        }
         Write-WorkerResult $ResultFile $uploadResult
         exit 0
     } catch {
-        Write-WorkerResult $ResultFile ([pscustomobject]@{ status = 0; body = '{"error":"upload_failed"}' })
+        $detail = [string]$_.Exception.Message
+        Write-DiagnosticEvent 'upload_exception' 0 'upload_failed' $detail
+        Write-WorkerResult $ResultFile ([pscustomobject]@{ status = 0; body = '{"error":"upload_failed"}'; detail = $detail })
         exit 1
     }
 }
@@ -811,12 +832,42 @@ function Process-UploadResult {
             $tray.ShowBalloonTip(5000, 'Confirme o resultado', 'A leitura teve baixa confiança e precisa da sua revisão.', [Windows.Forms.ToolTipIcon]::Warning)
             Set-AppStatus 'Confirmação necessária' 'Revise a corrida, a colocação e o tempo.' '#b8433a'
             Show-ReviewDialog $payload
+        } elseif ([int]$wrapper.status -eq 400 -and $payload.error -eq 'invalid_image') {
+            Set-AppStatus 'Comprovante recusado' 'A captura não chegou ao servidor como uma imagem válida.' '#b8433a'
+            $tray.ShowBalloonTip(4500, 'Comprovante recusado', 'Atualize o programa antes da próxima corrida.', [Windows.Forms.ToolTipIcon]::Error)
+            Remove-CurrentProof
+        } elseif ([int]$wrapper.status -eq 401) {
+            Set-AppStatus 'Vínculo inválido' 'Gere um novo código e vincule novamente seu Discord.' '#b8433a'
+            $tray.ShowBalloonTip(4500, 'Vínculo inválido', 'O servidor recusou a identificação deste computador.', [Windows.Forms.ToolTipIcon]::Error)
+            Remove-CurrentProof
+        } elseif ([int]$wrapper.status -eq 403 -and $payload.error -eq 'member_not_registered') {
+            Set-AppStatus 'Membro não encontrado' 'Seu Discord não está ativo no cadastro do site.' '#b8433a'
+            $tray.ShowBalloonTip(4500, 'Membro não encontrado', 'Confira seu cadastro no portal FAST.', [Windows.Forms.ToolTipIcon]::Error)
+            Remove-CurrentProof
+        } elseif ([int]$wrapper.status -eq 413) {
+            Set-AppStatus 'Captura muito grande' 'A imagem ultrapassou o limite aceito pelo site.' '#b8433a'
+            $tray.ShowBalloonTip(4500, 'Captura muito grande', 'A próxima versão reduzirá automaticamente a imagem.', [Windows.Forms.ToolTipIcon]::Error)
+            Remove-CurrentProof
+        } elseif ([int]$wrapper.status -eq 429) {
+            Set-AppStatus 'Envio temporariamente limitado' 'Aguarde um minuto antes de tentar novamente.' '#b8433a'
+            $tray.ShowBalloonTip(4500, 'Aguarde para enviar', 'O servidor aplicou um limite temporário.', [Windows.Forms.ToolTipIcon]::Warning)
+            Remove-CurrentProof
+        } elseif ([int]$wrapper.status -eq 503) {
+            Set-AppStatus 'Serviço temporariamente indisponível' 'O site respondeu, mas não conseguiu processar a corrida.' '#b8433a'
+            $tray.ShowBalloonTip(4500, 'Serviço indisponível', 'O vínculo e sua internet continuam válidos.', [Windows.Forms.ToolTipIcon]::Warning)
+            Remove-CurrentProof
+        } elseif ([int]$wrapper.status -eq 0) {
+            Set-AppStatus 'Falha de conexão' 'O servidor não respondeu ao envio da captura.' '#b8433a'
+            $tray.ShowBalloonTip(4500, 'Falha de conexão', 'Confira sua internet e tente novamente na próxima corrida.', [Windows.Forms.ToolTipIcon]::Error)
+            Remove-CurrentProof
         } else {
-            Set-AppStatus 'Falha no envio' 'O comprovante não foi enviado. Tente novamente na próxima corrida.' '#b8433a'
-            $tray.ShowBalloonTip(4000, 'Falha no envio', 'Confira sua conexão e o vínculo com o site.', [Windows.Forms.ToolTipIcon]::Error)
+            $failureCode = if ($payload.error) { [string]$payload.error } else { 'resposta_desconhecida' }
+            Set-AppStatus 'Falha no envio' "O servidor respondeu $([int]$wrapper.status): $failureCode." '#b8433a'
+            $tray.ShowBalloonTip(4500, 'Falha no envio', "Código $([int]$wrapper.status), $failureCode.", [Windows.Forms.ToolTipIcon]::Error)
             Remove-CurrentProof
         }
     } catch {
+        Write-DiagnosticEvent 'result_parse_error' 0 'invalid_response' ([string]$_.Exception.Message)
         $script:Busy = $false
         Set-AppStatus 'Falha no envio' 'Não foi possível interpretar a resposta do site.' '#b8433a'
         Remove-CurrentProof

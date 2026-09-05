@@ -1,4 +1,4 @@
-FAST Race Assistant 1.0.2
+FAST Race Assistant 1.0.3
 Produzido por Fael Verstappen
 
 INSTALAÇÃO
