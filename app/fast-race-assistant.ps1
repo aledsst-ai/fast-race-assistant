@@ -17,7 +17,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $script:AppName = 'FAST Race Assistant'
-$script:AppVersion = '1.0.3'
+$script:AppVersion = '1.0.4'
 try {
     $versionConfig = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'version.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
     if ([string]$versionConfig.version -match '^\d+\.\d+\.\d+$') { $script:AppVersion = [string]$versionConfig.version }
@@ -502,16 +502,35 @@ function Invoke-ResultUpload([string]$ImagePath, [string]$Token, [bool]$WasRevie
     $client.Timeout = [TimeSpan]::FromSeconds(50)
     $client.DefaultRequestHeaders.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue('Bearer', $Token)
     $client.DefaultRequestHeaders.Add('X-FAST-App-Version', $script:AppVersion)
-    $multipart = New-Object Net.Http.MultipartFormDataContent
+    # O overload Add(content, name, filename) do Windows PowerShell 5.1 gera
+    # parâmetros sem aspas. O parser multipart do Cloudflare rejeita esse
+    # formato; monte os Content-Disposition como um navegador faria.
+    $boundary = '----------------FAST' + [Guid]::NewGuid().ToString('N')
+    $multipart = New-Object Net.Http.MultipartFormDataContent($boundary)
+    $boundaryParameter = $multipart.Headers.ContentType.Parameters | Where-Object { $_.Name -eq 'boundary' } | Select-Object -First 1
+    if ($boundaryParameter) { $boundaryParameter.Value = $boundary }
     try {
         $imageContent = New-Object Net.Http.ByteArrayContent(,[IO.File]::ReadAllBytes($ImagePath))
         $imageContent.Headers.ContentType = New-Object Net.Http.Headers.MediaTypeHeaderValue('image/jpeg')
-        $multipart.Add($imageContent, 'image', 'comprovante.jpg')
+        $imageDisposition = New-Object Net.Http.Headers.ContentDispositionHeaderValue('form-data')
+        $imageDisposition.Name = '"image"'
+        $imageDisposition.FileName = '"comprovante.jpg"'
+        $imageContent.Headers.ContentDisposition = $imageDisposition
+        $multipart.Add($imageContent)
         if ($WasReviewed) {
-            $multipart.Add((New-Object Net.Http.StringContent('true')), 'reviewed')
-            $multipart.Add((New-Object Net.Http.StringContent($SelectedRaceKey)), 'raceKey')
-            $multipart.Add((New-Object Net.Http.StringContent([string]$SelectedPosition)), 'position')
-            $multipart.Add((New-Object Net.Http.StringContent($SelectedTime)), 'time')
+            $reviewFields = [ordered]@{
+                reviewed = 'true'
+                raceKey = $SelectedRaceKey
+                position = [string]$SelectedPosition
+                time = $SelectedTime
+            }
+            foreach ($field in $reviewFields.GetEnumerator()) {
+                $fieldContent = New-Object Net.Http.StringContent([string]$field.Value)
+                $fieldDisposition = New-Object Net.Http.Headers.ContentDispositionHeaderValue('form-data')
+                $fieldDisposition.Name = ('"{0}"' -f [string]$field.Key)
+                $fieldContent.Headers.ContentDisposition = $fieldDisposition
+                $multipart.Add($fieldContent)
+            }
         }
         $response = $client.PostAsync("$($script:ApiOrigin)/api/race-assistant/results", $multipart).Result
         return [pscustomobject]@{ status = [int]$response.StatusCode; body = $response.Content.ReadAsStringAsync().Result }
