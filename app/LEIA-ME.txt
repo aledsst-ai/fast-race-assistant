@@ -1,40 +1,27 @@
-FAST Race Assistant 1.0.4
+FAST Race Assistant 1.1.0 - AUXILIAR CTRL+V
 Produzido por Fael Verstappen
 
-INSTALAÇÃO
+INSTALACAO
 1. Extraia todos os arquivos do ZIP.
 2. Execute iniciar-fast-race-assistant.cmd.
-   O Windows pode mostrar Editor desconhecido. Se o arquivo foi baixado pelo portal FAST,
-   abra Mais informações e confirme Executar assim mesmo.
-3. No programa, clique em Gerar código.
-4. Entre no site com seu Discord e abra Dashboard, Corridas, Auxiliar.
-5. Cole o código e confirme o vínculo.
+3. O auxiliar sera iniciado com o Windows e permanecera somente na bandeja,
+   perto do relogio.
 
 COMO FUNCIONA
-O programa fica na bandeja do Windows e observa somente a janela ativa do FiveM.
-Quando o cartão central de corrida concluída aparece, ele guarda uma captura completa,
-compacta o comprovante e envia os dados ao site. O resultado só é registrado quando
-o tempo supera seu recorde pessoal naquela corrida.
+1. Abra o Gerador de Anuncios no site.
+2. Preencha o anuncio e clique em Preparar sequencia Ctrl+V.
+3. No FiveM, selecione cada campo e pressione Ctrl+V nesta ordem:
+   titulo, mensagem, duracao e URL da imagem, quando informada.
 
-Se a leitura tiver baixa confiança, uma confirmação será aberta para revisar corrida,
-colocação e tempo. Esse resultado fica marcado no site como Revisado pelo membro.
-A viatura é opcional e não é lida automaticamente.
+O auxiliar somente intercepta Ctrl+V enquanto houver uma sequencia FAST ativa.
+Clique com o botao direito no icone para cancelar a sequencia ou encerrar.
 
-COLAGEM SEQUENCIAL CTRL+V
-O FAST Race Assistant também recebe a sequência preparada pelo Gerador de Anúncios do
-site e cola um campo por vez no jogo. Se o auxiliar antigo já estiver aberto, o programa
-detecta isso e deixa a função Ctrl+V sob responsabilidade dele, sem conflito.
+CORRIDAS
+O auxiliar nao observa mais a tela, nao captura imagens e nao envia resultados.
+Os resultados de corridas devem ser registrados manualmente pelo site.
 
-PRIVACIDADE
-Nenhuma captura contínua é enviada. Apenas a captura em que o cartão de conclusão foi
-detectado pode ser enviada. Comprovantes registrados são visíveis somente para usuários
-autenticados no site.
+ATUALIZACOES
+O programa verifica atualizacoes automaticamente. Uma versao baixada sera
+aplicada na proxima inicializacao, sem nova instalacao manual.
 
-ATUALIZAÇÕES
-O programa verifica atualizações automaticamente. Quando uma versão nova for baixada,
-ela será aplicada na próxima inicialização sem reinstalação manual.
-
-REQUISITOS
-Windows 10 ou 11, PowerShell 5.1, resolução de 1920x1080 ou superior e acesso à internet.
-
-Para remover a inicialização automática, execute remover-fast-race-assistant.cmd.
+Para remover a inicializacao automatica, execute remover-fast-race-assistant.cmd.

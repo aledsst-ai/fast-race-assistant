@@ -18,7 +18,7 @@ if /I not "%~dp0"=="%FAST_RA_INSTALL%\" (
   if exist "%~dp0fast-emblem.png" copy /Y "%~dp0fast-emblem.png" "%FAST_RA_INSTALL%\fast-emblem.png" >nul
 )
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut($env:FAST_RA_LINK); $shortcut.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'; $shortcut.Arguments = [char]34 + (Join-Path $env:FAST_RA_INSTALL 'componente-interno-fast.vbs') + [char]34; $shortcut.WorkingDirectory = $env:FAST_RA_INSTALL; $shortcut.WindowStyle = 7; $shortcut.Description = 'FAST Race Assistant, produzido por Fael Verstappen'; $shortcut.Save()" >nul 2>nul
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut($env:FAST_RA_LINK); $shortcut.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'; $shortcut.Arguments = [char]34 + (Join-Path $env:FAST_RA_INSTALL 'componente-interno-fast.vbs') + [char]34; $shortcut.WorkingDirectory = $env:FAST_RA_INSTALL; $shortcut.WindowStyle = 7; $shortcut.Description = 'Auxiliar FAST de colagem sequencial, produzido por Fael Verstappen'; $shortcut.Save()" >nul 2>nul
 
 start "" "%SystemRoot%\System32\wscript.exe" "%FAST_RA_INSTALL%\componente-interno-fast.vbs"
 exit /b 0
